@@ -29,19 +29,13 @@ public sealed class RedisDeliveryRouter : IDeliveryRouter
         CancellationToken cancellationToken)
     {
         var userId = message.TargetId.ToString();
-        var presenceTask = _store.GetStringAsync(
-            $"{_options.PresenceKeyPrefix}{userId}",
-            cancellationToken);
-        var gatewayTask = _store.GetStringAsync(
+        var gatewayId = await _store.GetStringAsync(
             $"{_options.GatewayMappingKeyPrefix}{userId}",
             cancellationToken);
 
-        await Task.WhenAll(presenceTask, gatewayTask);
-
-        var presence = await presenceTask;
-        var gatewayId = await gatewayTask;
-
-        if (string.IsNullOrWhiteSpace(presence) || string.IsNullOrWhiteSpace(gatewayId))
+        // The Gateway gives this mapping the same TTL as the presence key.
+        // No mapping therefore means the user is offline.
+        if (string.IsNullOrWhiteSpace(gatewayId))
         {
             return DeliveryRouteResult.Offline;
         }

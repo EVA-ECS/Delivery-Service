@@ -36,8 +36,6 @@ builder.Services.AddOptions<RedisOptions>()
     .Bind(builder.Configuration.GetSection(RedisOptions.SectionName))
     .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString),
         "Redis:ConnectionString is required.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.PresenceKeyPrefix),
-        "Redis:PresenceKeyPrefix is required.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.GatewayMappingKeyPrefix),
         "Redis:GatewayMappingKeyPrefix is required.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.DeliveryChannelPrefix),

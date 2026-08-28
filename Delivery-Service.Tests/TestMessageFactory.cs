@@ -28,6 +28,7 @@ internal static class TestMessageFactory
         Action? acknowledge = null,
         Action<bool>? negativeAcknowledge = null,
         Func<CancellationToken, ValueTask>? acknowledgeAsync = null,
+        Func<bool, CancellationToken, ValueTask>? negativeAcknowledgeAsync = null,
         string? routingKey = null)
     {
         return new DeliveryQueueMessage(
@@ -35,16 +36,15 @@ internal static class TestMessageFactory
                 message,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             routingKey ?? $"msg.private.{message.TargetId}",
-            redelivered: false,
             acknowledgeAsync ?? (_ =>
             {
                 acknowledge?.Invoke();
                 return ValueTask.CompletedTask;
             }),
-            (requeue, _) =>
+            negativeAcknowledgeAsync ?? ((requeue, _) =>
             {
                 negativeAcknowledge?.Invoke(requeue);
                 return ValueTask.CompletedTask;
-            });
+            }));
     }
 }

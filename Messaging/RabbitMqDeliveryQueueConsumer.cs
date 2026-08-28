@@ -9,7 +9,8 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
 {
     private readonly RabbitMqOptions _options;
     private readonly ILogger<RabbitMqDeliveryQueueConsumer> _logger;
-    private readonly SemaphoreSlim _acknowledgementLock = new(1, 1);
+    // The workers share one RabbitMQ channel, so Ack/Nack calls must be serialized.
+    private readonly SemaphoreSlim _channelLock = new(1, 1);
     private IConnection? _connection;
     private IChannel? _channel;
     private string? _consumerTag;
@@ -43,18 +44,18 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
             UserName = _options.Username,
             Password = _options.Password,
             VirtualHost = _options.VirtualHost,
-            AutomaticRecoveryEnabled = true,
-            TopologyRecoveryEnabled = true,
-            NetworkRecoveryInterval = TimeSpan.FromSeconds(5),
+            // Worker.cs owns the single, visible retry path.
+            AutomaticRecoveryEnabled = false,
             ConsumerDispatchConcurrency = 1
         };
 
         _connection = await factory.CreateConnectionAsync(
             "delivery-service",
             cancellationToken);
-        _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        var channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        _channel = channel;
 
-        await _channel.ExchangeDeclareAsync(
+        await channel.ExchangeDeclareAsync(
             exchange: _options.ExchangeName,
             type: ExchangeType.Topic,
             durable: true,
@@ -62,7 +63,7 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
             arguments: null,
             cancellationToken: cancellationToken);
 
-        await _channel.QueueDeclareAsync(
+        await channel.QueueDeclareAsync(
             queue: _options.QueueName,
             durable: true,
             exclusive: false,
@@ -70,20 +71,20 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
             arguments: null,
             cancellationToken: cancellationToken);
 
-        await _channel.QueueBindAsync(
+        await channel.QueueBindAsync(
             queue: _options.QueueName,
             exchange: _options.ExchangeName,
             routingKey: _options.RoutingKey,
             arguments: null,
             cancellationToken: cancellationToken);
 
-        await _channel.BasicQosAsync(
+        await channel.BasicQosAsync(
             prefetchSize: 0,
             prefetchCount: prefetchCount,
             global: false,
             cancellationToken: cancellationToken);
 
-        _channel.ChannelShutdownAsync += (_, args) =>
+        channel.ChannelShutdownAsync += (_, args) =>
         {
             if (!_stopping)
             {
@@ -97,28 +98,32 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
             return Task.CompletedTask;
         };
 
-        _channel.CallbackExceptionAsync += (_, args) =>
+        channel.CallbackExceptionAsync += (_, args) =>
         {
             _logger.LogError(args.Exception, "RabbitMQ consumer callback failed.");
             return Task.CompletedTask;
         };
 
-        var consumer = new AsyncEventingBasicConsumer(_channel);
+        var consumer = new AsyncEventingBasicConsumer(channel);
         consumer.ReceivedAsync += async (_, args) =>
         {
             // RabbitMQ.Client owns args.Body after this callback returns.
             var body = args.Body.ToArray();
+            var deliveryTag = args.DeliveryTag;
             var message = new DeliveryQueueMessage(
                 body,
                 args.RoutingKey,
-                args.Redelivered,
-                token => AcknowledgeAsync(args.DeliveryTag, token),
-                (requeue, token) => NegativeAcknowledgeAsync(args.DeliveryTag, requeue, token));
+                token => AcknowledgeAsync(channel, deliveryTag, token),
+                (requeue, token) => NegativeAcknowledgeAsync(
+                    channel,
+                    deliveryTag,
+                    requeue,
+                    token));
 
             await onMessage(message, CancellationToken.None);
         };
 
-        _consumerTag = await _channel.BasicConsumeAsync(
+        _consumerTag = await channel.BasicConsumeAsync(
             queue: _options.QueueName,
             autoAck: false,
             consumer: consumer,
@@ -153,7 +158,7 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
     {
         await StopAsync(CancellationToken.None);
         await DisposeSessionAsync();
-        _acknowledgementLock.Dispose();
+        _channelLock.Dispose();
     }
 
     private async Task DisposeSessionAsync()
@@ -174,42 +179,44 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
     }
 
     private async ValueTask AcknowledgeAsync(
+        IChannel channel,
         ulong deliveryTag,
         CancellationToken cancellationToken)
     {
-        await _acknowledgementLock.WaitAsync(cancellationToken);
+        await _channelLock.WaitAsync(cancellationToken);
         try
         {
-            if (_channel is null || !_channel.IsOpen)
+            if (!channel.IsOpen)
             {
                 throw new InvalidOperationException("RabbitMQ channel is not open.");
             }
 
-            await _channel.BasicAckAsync(
+            await channel.BasicAckAsync(
                 deliveryTag,
                 multiple: false,
                 cancellationToken);
         }
         finally
         {
-            _acknowledgementLock.Release();
+            _channelLock.Release();
         }
     }
 
     private async ValueTask NegativeAcknowledgeAsync(
+        IChannel channel,
         ulong deliveryTag,
         bool requeue,
         CancellationToken cancellationToken)
     {
-        await _acknowledgementLock.WaitAsync(cancellationToken);
+        await _channelLock.WaitAsync(cancellationToken);
         try
         {
-            if (_channel is null || !_channel.IsOpen)
+            if (!channel.IsOpen)
             {
                 return;
             }
 
-            await _channel.BasicNackAsync(
+            await channel.BasicNackAsync(
                 deliveryTag,
                 multiple: false,
                 requeue,
@@ -217,7 +224,7 @@ public sealed class RabbitMqDeliveryQueueConsumer : IDeliveryQueueConsumer
         }
         finally
         {
-            _acknowledgementLock.Release();
+            _channelLock.Release();
         }
     }
 

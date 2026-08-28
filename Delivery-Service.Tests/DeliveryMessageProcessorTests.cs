@@ -47,7 +47,6 @@ public sealed class DeliveryMessageProcessorTests
         var queueMessage = new DeliveryQueueMessage(
             body,
             $"msg.private.{expected.TargetId}",
-            false,
             _ => ValueTask.CompletedTask,
             (_, _) => ValueTask.CompletedTask);
 
@@ -67,7 +66,6 @@ public sealed class DeliveryMessageProcessorTests
         var queueMessage = new DeliveryQueueMessage(
             Encoding.UTF8.GetBytes("not-json"),
             "msg.private.invalid",
-            false,
             _ => ValueTask.CompletedTask,
             (_, _) => ValueTask.CompletedTask);
 

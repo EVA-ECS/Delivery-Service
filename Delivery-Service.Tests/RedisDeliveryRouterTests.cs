@@ -12,7 +12,6 @@ public sealed class RedisDeliveryRouterTests
     private static readonly RedisOptions Options = new()
     {
         ConnectionString = "unused",
-        PresenceKeyPrefix = "presence:",
         GatewayMappingKeyPrefix = "gateway_for_user:",
         DeliveryChannelPrefix = "gateway:delivery:"
     };
@@ -22,7 +21,6 @@ public sealed class RedisDeliveryRouterTests
     {
         var message = TestMessageFactory.CreateEvent();
         var store = new FakeRedisStore();
-        store.Values[$"presence:{message.TargetId}"] = "1";
         store.Values[$"gateway_for_user:{message.TargetId}"] = "gateway-b";
         var router = CreateRouter(store);
 
@@ -41,7 +39,6 @@ public sealed class RedisDeliveryRouterTests
     {
         var message = TestMessageFactory.CreateEvent();
         var store = new FakeRedisStore();
-        store.Values[$"presence:{message.TargetId}"] = "1";
         var router = CreateRouter(store);
 
         var result = await router.RouteAsync(message, CancellationToken.None);
