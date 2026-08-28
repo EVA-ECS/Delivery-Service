@@ -26,7 +26,6 @@ public sealed class DeliveryMessageProcessorTests
         Assert.Equal(DeliveryProcessingResult.Processed, result);
         Assert.NotNull(router.Message);
         Assert.Equal(expected.MessageId, router.Message!.MessageId);
-        Assert.Equal(expected.RoomId, router.Message.RoomId);
         Assert.Equal(expected.SenderId, router.Message.SenderId);
         Assert.Equal(expected.TargetId, router.Message.TargetId);
         Assert.Equal(expected.Payload, router.Message.Payload);

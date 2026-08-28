@@ -16,7 +16,6 @@ Die Recovery besitzt nur einen Pfad: Bei einem Verbindungsabbruch beendet der Co
 Vertragsentscheidung
 Der widersprüchliche Altvertrag wurde als Contract v2 vereinheitlicht:
 - messageId
-- roomId
 - senderId
 - targetId
 - Unix-Timestamp in Millisekunden
@@ -24,7 +23,7 @@ Der widersprüchliche Altvertrag wurde als Contract v2 vereinheitlicht:
 - payload.iv
 - payload.ciphertext
 - payload.signature
-roomId wurde aufgenommen, obwohl es im JSON-Beispiel einzelner Wiki-Abschnitte fehlt, weil es in der Aufgabenstellung und den Signatur-/Raumanforderungen ausdrücklich benötigt wird. Das ältere ChatMessageEvent bleibt als veralteter Kompatibilitätstyp erhalten.
+Der MVP unterstützt ausschließlich private 1-zu-1-Nachrichten. Sender und Empfänger identifizieren den privaten Nachrichtenpfad, daher enthält der Live-Delivery-Vertrag keine roomId. Das ältere ChatMessageEvent bleibt als veralteter Kompatibilitätstyp erhalten.
 Für Routing wurde die neuere Baseline msg.private.<targetId> und msg.group.<groupId> statt des älteren chat.private.* gewählt.
 Geänderte Dateien
 Delivery Service:

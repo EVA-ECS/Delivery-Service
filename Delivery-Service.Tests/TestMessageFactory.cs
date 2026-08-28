@@ -10,7 +10,6 @@ internal static class TestMessageFactory
     public static ChatMessagePublishedEvent CreateEvent(Guid? targetId = null) => new()
     {
         MessageId = Guid.NewGuid(),
-        RoomId = Guid.NewGuid(),
         SenderId = Guid.NewGuid(),
         TargetId = targetId ?? Guid.NewGuid(),
         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),

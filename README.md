@@ -29,7 +29,7 @@ verantwortlich.
 ## Gemeinsamer Vertrag und MVP-Grenze
 
 Verwendet wird `ChatMessagePublishedEvent` aus dem Contracts-Repository (v2) mit
-`messageId`, `roomId`, `senderId`, `targetId`, Unix-Timestamp in Millisekunden
+`messageId`, `senderId`, `targetId`, Unix-Timestamp in Millisekunden
 sowie `payload.encryptedKey`, `payload.iv`, `payload.ciphertext` und
 `payload.signature`. Der Consumer akzeptiert sowohl rohes JSON als auch den
 MassTransit-Envelope mit einer `message`-Eigenschaft.

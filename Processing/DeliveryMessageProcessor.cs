@@ -88,7 +88,6 @@ public sealed class DeliveryMessageProcessor : IDeliveryMessageProcessor
 
     private static bool IsValid(ChatMessagePublishedEvent message) =>
         message.MessageId != Guid.Empty &&
-        message.RoomId != Guid.Empty &&
         message.SenderId != Guid.Empty &&
         message.TargetId != Guid.Empty &&
         message.Timestamp > 0 &&
