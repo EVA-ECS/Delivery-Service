@@ -6,12 +6,13 @@ Implementiert
 - Transiente Redis-/Verarbeitungsfehler: Nack mit Requeue.
 - Ungültige oder nicht unterstützte Nachrichten: Nack ohne Requeue.
 - Kontrolliertes Herunterfahren: Consumer stoppen, laufende Nachrichten abarbeiten, bei Timeout abbrechen und requeue.
-- Redis-Lookup über presence:<userId> und gateway_for_user:<userId>.
+- Redis-Lookup über gateway_for_user:<userId>; die Zuordnung besitzt denselben TTL wie der Presence-Key und dient deshalb zugleich als Online-Signal.
 - Weiterleitung an gateway:delivery:<gatewayId>.
 - Kein Datenbankzugriff im Delivery Service.
 - Gateway registriert Presence und Gateway-Zuordnung, verwaltet lokale WebSockets und empfängt Redis-Pub/Sub-Nachrichten.
 - Worker besitzt keine öffentlichen Ports.
 Die RabbitMQ-Implementierung kopiert den Message-Body innerhalb des Consumer-Callbacks, bestätigt Nachrichten einzeln und serialisiert Channel-Acknowledgements entsprechend den offiziellen Concurrency-Empfehlungen des .NET RabbitMQ Client Guide.
+Die Recovery besitzt nur einen Pfad: Bei einem Verbindungsabbruch beendet der Consumer seine Session und Worker.cs erstellt nach dem konfigurierten Delay eine neue. Acknowledgements bleiben dabei an den Channel gebunden, über den die Nachricht empfangen wurde.
 Vertragsentscheidung
 Der widersprüchliche Altvertrag wurde als Contract v2 vereinheitlicht:
 - messageId
@@ -52,7 +53,7 @@ Docker:
 - [docker-compose.yaml]
 Das Wiki wurde nicht verändert. Der bereits vorhandene unversionierte .serena-Ordner blieb unangetastet.
 Tests und Prüfungen
-- Delivery Unit-/Lifecycle-Tests: 15/15 bestanden
+- Delivery Unit-/Lifecycle-Tests: 16/16 bestanden
   - gültige RabbitMQ-Nachricht und gemeinsamer Contract
   - MassTransit-Envelope
   - parallele Workerbegrenzung
@@ -61,6 +62,7 @@ Tests und Prüfungen
   - Redis-Fehler und Requeue
   - Ack-/Nack-Verhalten
   - RabbitMQ-Ack-Fehler
+  - RabbitMQ-Nack-Fehler beendet keinen Worker
   - ungültige Nachrichten
   - Shutdown-Drain und Shutdown-Timeout
   - RabbitMQ-Startfehler mit Retry

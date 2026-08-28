@@ -17,6 +17,9 @@ keinen Datenbankzugriff.
   abgelehnt. Transiente Redis-/Verarbeitungsfehler werden mit Requeue abgelehnt.
 - Beim Herunterfahren wird der RabbitMQ-Consumer zuerst gestoppt; laufende Arbeit
   darf bis `Delivery:ShutdownTimeoutSeconds` auslaufen.
+- Verbindungsabbrüche werden an einer Stelle behandelt: Der Worker erstellt nach
+  einer kurzen Pause eine neue RabbitMQ-Session. Die automatische Client-Recovery
+  ist deshalb deaktiviert.
 
 Offline ist im Delivery-Pfad ein erfolgreich verarbeitetes Ergebnis: Der Worker
 speichert nichts und bestätigt keine Persistenz. Die getrennte `storage.queue`
@@ -42,8 +45,7 @@ Storage-Pfad bleibt davon unabhängig.
 Alle Einstellungen können über die übliche .NET-Schreibweise überschrieben
 werden, beispielsweise `Delivery__WorkerCount`, `RabbitMQ__Host`,
 `RabbitMQ__Username`, `RabbitMQ__Password`, `Redis__ConnectionString`,
-`Redis__PresenceKeyPrefix`, `Redis__GatewayMappingKeyPrefix` und
-`Redis__DeliveryChannelPrefix`.
+`Redis__GatewayMappingKeyPrefix` und `Redis__DeliveryChannelPrefix`.
 
 Der Docker-Build wird aus dem gemeinsamen EVA-Verzeichnis gestartet:
 
