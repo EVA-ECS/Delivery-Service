@@ -104,6 +104,34 @@ public sealed class DeliveryDispatcherTests
     }
 
     [Fact]
+    public async Task NackFailureDoesNotStopTheWorker()
+    {
+        await using var dispatcher = new DeliveryDispatcher(
+            1,
+            new FirstCallFailsProcessor(),
+            NullLogger.Instance);
+        dispatcher.Start();
+        var secondMessageAcknowledged = false;
+
+        await dispatcher.EnqueueAsync(
+            TestMessageFactory.CreateQueueMessage(
+                TestMessageFactory.CreateEvent(),
+                negativeAcknowledgeAsync: (_, _) => ValueTask.FromException(
+                    new IOException("rabbit channel failed"))),
+            CancellationToken.None);
+        await dispatcher.EnqueueAsync(
+            TestMessageFactory.CreateQueueMessage(
+                TestMessageFactory.CreateEvent(),
+                acknowledge: () => secondMessageAcknowledged = true),
+            CancellationToken.None);
+
+        dispatcher.Complete();
+        await dispatcher.WaitForCompletionAsync(CancellationToken.None);
+
+        Assert.True(secondMessageAcknowledged);
+    }
+
+    [Fact]
     public async Task ShutdownDrainsInFlightMessageBeforeAcknowledging()
     {
         var processor = new ControlledProcessor();
@@ -170,6 +198,19 @@ public sealed class DeliveryDispatcherTests
             DeliveryQueueMessage message,
             CancellationToken cancellationToken) =>
             Task.FromException<DeliveryProcessingResult>(new IOException("redis unavailable"));
+    }
+
+    private sealed class FirstCallFailsProcessor : IDeliveryMessageProcessor
+    {
+        private int _calls;
+
+        public Task<DeliveryProcessingResult> ProcessAsync(
+            DeliveryQueueMessage message,
+            CancellationToken cancellationToken) =>
+            Interlocked.Increment(ref _calls) == 1
+                ? Task.FromException<DeliveryProcessingResult>(
+                    new IOException("redis unavailable"))
+                : Task.FromResult(DeliveryProcessingResult.Processed);
     }
 
     private sealed class BarrierProcessor : IDeliveryMessageProcessor

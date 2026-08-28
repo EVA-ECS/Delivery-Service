@@ -99,16 +99,12 @@ public sealed class DeliveryDispatcher : IAsyncDisposable
                 }
                 else
                 {
-                    await message.NegativeAcknowledgeAsync(
-                        requeue: false,
-                        CancellationToken.None);
+                    await TryNegativeAcknowledgeAsync(message, requeue: false);
                 }
             }
             catch (OperationCanceledException) when (_processingCancellation.IsCancellationRequested)
             {
-                await message.NegativeAcknowledgeAsync(
-                    requeue: true,
-                    CancellationToken.None);
+                await TryNegativeAcknowledgeAsync(message, requeue: true);
             }
             catch (Exception exception)
             {
@@ -117,10 +113,28 @@ public sealed class DeliveryDispatcher : IAsyncDisposable
                     "Delivery worker {WorkerId} failed; message will be requeued.",
                     workerId);
 
-                await message.NegativeAcknowledgeAsync(
-                    requeue: true,
-                    CancellationToken.None);
+                await TryNegativeAcknowledgeAsync(message, requeue: true);
             }
+        }
+    }
+
+    private async Task TryNegativeAcknowledgeAsync(
+        DeliveryQueueMessage message,
+        bool requeue)
+    {
+        try
+        {
+            await message.NegativeAcknowledgeAsync(
+                requeue,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            // A closed RabbitMQ channel requeues unacknowledged messages itself.
+            // Keep this worker alive so the configured pool size does not shrink.
+            _logger.LogWarning(
+                exception,
+                "RabbitMQ Nack failed; channel recovery will handle the unacknowledged message.");
         }
     }
 }
