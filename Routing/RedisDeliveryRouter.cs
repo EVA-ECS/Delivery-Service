@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Delivery_Service.Configuration;
-using EVA_ECS.Chat.Contracts.Events;
+using Chat.Contracts.Events;
 using Microsoft.Extensions.Options;
 
 namespace Delivery_Service.Routing;
@@ -25,33 +25,46 @@ public sealed class RedisDeliveryRouter : IDeliveryRouter
     }
 
     public async Task<DeliveryRouteResult> RouteAsync(
-        ChatMessagePublishedEvent message,
+        ChatMessageEvent message,
         CancellationToken cancellationToken)
     {
-        var userId = message.TargetId.ToString();
+        var userId = message.TargetId;
         var gatewayId = await _store.GetStringAsync(
             $"{_options.GatewayMappingKeyPrefix}{userId}",
             cancellationToken);
 
-        // The Gateway gives this mapping the same TTL as the presence key.
-        // No mapping therefore means the user is offline.
-        if (string.IsNullOrWhiteSpace(gatewayId))
+        string? channel;
+        if (!string.IsNullOrWhiteSpace(gatewayId))
         {
-            return DeliveryRouteResult.Offline;
+            // Multi-Gateway deployments use the mapping set by Gateway.
+            channel = $"{_options.DeliveryChannelPrefix}{gatewayId}";
+        }
+        else
+        {
+            // The MVP can run one Gateway without a user-to-gateway map.
+            var presence = await _store.GetStringAsync(
+                $"{_options.PresenceKeyPrefix}{userId}",
+                cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(presence))
+            {
+                return DeliveryRouteResult.Offline;
+            }
+
+            channel = _options.SingleGatewayDeliveryChannel;
         }
 
-        var channel = $"{_options.DeliveryChannelPrefix}{gatewayId}";
         var subscriberCount = await _store.PublishAsync(
             channel,
-            JsonSerializer.Serialize(message, JsonOptions),
+            System.Text.Json.JsonSerializer.Serialize(message, JsonOptions),
             cancellationToken);
 
         if (subscriberCount == 0)
         {
             _logger.LogWarning(
                 "Gateway {GatewayId} has no Redis subscriber; recipient {TargetId} is treated as offline.",
-                gatewayId,
-                message.TargetId);
+                gatewayId ?? "single-gateway",
+                userId);
             return DeliveryRouteResult.Offline;
         }
 

@@ -1,9 +1,6 @@
-using System.Text;
-using System.Text.Json;
-using Delivery_Service.Messaging;
+using Chat.Contracts.Events;
 using Delivery_Service.Processing;
 using Delivery_Service.Routing;
-using EVA_ECS.Chat.Contracts.Events;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Delivery_Service.Tests;
@@ -11,80 +8,46 @@ namespace Delivery_Service.Tests;
 public sealed class DeliveryMessageProcessorTests
 {
     [Fact]
-    public async Task ValidRabbitMqMessageUsesSharedContract()
+    public async Task ValidMessageIsRoutedToTheRecipient()
     {
         var expected = TestMessageFactory.CreateEvent();
-        var router = new RecordingRouter();
+        var router = new RecordingRouter(DeliveryRouteResult.Delivered);
+        var processor = new DeliveryMessageProcessor(
+            router,
+            NullLogger<DeliveryMessageProcessor>.Instance);
+
+        var result = await processor.ProcessAsync(expected, CancellationToken.None);
+
+        Assert.Equal(DeliveryProcessingResult.Processed, result);
+        Assert.Equal(expected, router.Message);
+    }
+
+    [Fact]
+    public async Task OfflineRecipientIsAValidCompletedDelivery()
+    {
+        var router = new RecordingRouter(DeliveryRouteResult.Offline);
         var processor = new DeliveryMessageProcessor(
             router,
             NullLogger<DeliveryMessageProcessor>.Instance);
 
         var result = await processor.ProcessAsync(
-            TestMessageFactory.CreateQueueMessage(expected),
+            TestMessageFactory.CreateEvent(),
             CancellationToken.None);
 
         Assert.Equal(DeliveryProcessingResult.Processed, result);
         Assert.NotNull(router.Message);
-        Assert.Equal(expected.MessageId, router.Message!.MessageId);
-        Assert.Equal(expected.SenderId, router.Message.SenderId);
-        Assert.Equal(expected.TargetId, router.Message.TargetId);
-        Assert.Equal(expected.Payload, router.Message.Payload);
-        Assert.Equal(expected.Timestamp, router.Message.Timestamp);
     }
 
     [Fact]
-    public async Task MassTransitEnvelopeIsAccepted()
+    public async Task InvalidMessageIsIgnoredWithoutRouting()
     {
-        var expected = TestMessageFactory.CreateEvent();
-        var router = new RecordingRouter();
-        var processor = new DeliveryMessageProcessor(
-            router,
-            NullLogger<DeliveryMessageProcessor>.Instance);
-        var body = JsonSerializer.SerializeToUtf8Bytes(
-            new { message = expected },
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        var queueMessage = new DeliveryQueueMessage(
-            body,
-            $"msg.private.{expected.TargetId}",
-            _ => ValueTask.CompletedTask,
-            (_, _) => ValueTask.CompletedTask);
-
-        var result = await processor.ProcessAsync(queueMessage, CancellationToken.None);
-
-        Assert.Equal(DeliveryProcessingResult.Processed, result);
-        Assert.Equal(expected.MessageId, router.Message?.MessageId);
-    }
-
-    [Fact]
-    public async Task MalformedMessageIsInvalidAndNotRouted()
-    {
-        var router = new RecordingRouter();
-        var processor = new DeliveryMessageProcessor(
-            router,
-            NullLogger<DeliveryMessageProcessor>.Instance);
-        var queueMessage = new DeliveryQueueMessage(
-            Encoding.UTF8.GetBytes("not-json"),
-            "msg.private.invalid",
-            _ => ValueTask.CompletedTask,
-            (_, _) => ValueTask.CompletedTask);
-
-        var result = await processor.ProcessAsync(queueMessage, CancellationToken.None);
-
-        Assert.Equal(DeliveryProcessingResult.Invalid, result);
-        Assert.Null(router.Message);
-    }
-
-    [Fact]
-    public async Task NullEncryptedPayloadIsInvalidAndNotRequeuedForever()
-    {
-        var message = TestMessageFactory.CreateEvent() with { Payload = null! };
-        var router = new RecordingRouter();
+        var router = new RecordingRouter(DeliveryRouteResult.Delivered);
         var processor = new DeliveryMessageProcessor(
             router,
             NullLogger<DeliveryMessageProcessor>.Instance);
 
         var result = await processor.ProcessAsync(
-            TestMessageFactory.CreateQueueMessage(message),
+            new ChatMessageEvent("not-a-guid", "not-a-guid", "not-a-guid", "text", DateTime.UtcNow),
             CancellationToken.None);
 
         Assert.Equal(DeliveryProcessingResult.Invalid, result);
@@ -92,34 +55,41 @@ public sealed class DeliveryMessageProcessorTests
     }
 
     [Fact]
-    public async Task GroupRoutingIsRejectedUntilRecipientsAreInContract()
+    public async Task RedisFailureIsPropagatedToMassTransit()
     {
-        var message = TestMessageFactory.CreateEvent();
-        var router = new RecordingRouter();
         var processor = new DeliveryMessageProcessor(
-            router,
+            new ThrowingRouter(),
             NullLogger<DeliveryMessageProcessor>.Instance);
 
-        var result = await processor.ProcessAsync(
-            TestMessageFactory.CreateQueueMessage(
-                message,
-                routingKey: $"msg.group.{message.TargetId}"),
-            CancellationToken.None);
-
-        Assert.Equal(DeliveryProcessingResult.Invalid, result);
-        Assert.Null(router.Message);
+        await Assert.ThrowsAsync<IOException>(() =>
+            processor.ProcessAsync(
+                TestMessageFactory.CreateEvent(),
+                CancellationToken.None));
     }
 
     private sealed class RecordingRouter : IDeliveryRouter
     {
-        public ChatMessagePublishedEvent? Message { get; private set; }
+        private readonly DeliveryRouteResult _result;
+
+        public RecordingRouter(DeliveryRouteResult result) => _result = result;
+
+        public ChatMessageEvent? Message { get; private set; }
 
         public Task<DeliveryRouteResult> RouteAsync(
-            ChatMessagePublishedEvent message,
+            ChatMessageEvent message,
             CancellationToken cancellationToken)
         {
             Message = message;
-            return Task.FromResult(DeliveryRouteResult.Delivered);
+            return Task.FromResult(_result);
         }
+    }
+
+    private sealed class ThrowingRouter : IDeliveryRouter
+    {
+        public Task<DeliveryRouteResult> RouteAsync(
+            ChatMessageEvent message,
+            CancellationToken cancellationToken) =>
+            Task.FromException<DeliveryRouteResult>(
+                new IOException("redis unavailable"));
     }
 }

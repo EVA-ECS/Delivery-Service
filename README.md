@@ -1,54 +1,69 @@
-# EVA Delivery Service
+# Delivery Service
 
-Der Delivery Service konsumiert die dauerhafte RabbitMQ-Queue `delivery.queue`
-und leitet private, Ende-zu-Ende-verschlüsselte Chatnachrichten an die Gateway-
-Instanz weiter, an der der Empfänger aktuell verbunden ist. Der Service besitzt
-keinen Datenbankzugriff.
+Der Delivery Service verarbeitet private Chatnachrichten aus `delivery_queue`.
+Die Nachricht wurde vorher vom Storage Service in Supabase gespeichert.
+Delivery speichert selbst nichts in der Datenbank.
 
-## Verarbeitungsmodell
+## Ablauf
 
-- `Delivery:WorkerCount` erzeugt exakt diese Anzahl langlebiger Worker-Tasks.
-- RabbitMQ-Prefetch und die Kapazität des internen bounded Channels entsprechen
-  der Workerzahl. Dadurch sind nie mehr Nachrichten unbestätigt als Worker
-  verfügbar sind.
-- `basic.ack` erfolgt einzeln und erst nach erfolgreichem Redis-Routing oder nach
-  der erfolgreichen Feststellung, dass der Empfänger offline ist.
-- Ungültige beziehungsweise nicht unterstützte Nachrichten werden ohne Requeue
-  abgelehnt. Transiente Redis-/Verarbeitungsfehler werden mit Requeue abgelehnt.
-- Beim Herunterfahren wird der RabbitMQ-Consumer zuerst gestoppt; laufende Arbeit
-  darf bis `Delivery:ShutdownTimeoutSeconds` auslaufen.
-- Verbindungsabbrüche werden an einer Stelle behandelt: Der Worker erstellt nach
-  einer kurzen Pause eine neue RabbitMQ-Session. Die automatische Client-Recovery
-  ist deshalb deaktiviert.
+```text
+Gateway -> storage_queue -> Storage/Supabase -> delivery_queue -> Delivery
+                                                                  |
+                                      Redis: online? --------------+
+                                          | ja -> Gateway/WebSocket
+                                          | nein -> Nachricht bleibt in Supabase
+```
 
-Offline ist im Delivery-Pfad ein erfolgreich verarbeitetes Ergebnis: Der Worker
-speichert nichts und bestätigt keine Persistenz. Die getrennte `storage.queue`
-und der Storage Service sind für dauerhafte Speicherung und spätere Synchronisation
-verantwortlich.
+Der aktuelle MVP unterstützt private Nachrichten. Gruppen gehören nicht zum
+aktuellen Umfang.
 
-## Gemeinsamer Vertrag und MVP-Grenze
+## Vertrag
 
-Verwendet wird `ChatMessagePublishedEvent` aus dem Contracts-Repository (v2) mit
-`messageId`, `senderId`, `targetId`, Unix-Timestamp in Millisekunden
-sowie `payload.encryptedKey`, `payload.iv`, `payload.ciphertext` und
-`payload.signature`. Der Consumer akzeptiert sowohl rohes JSON als auch den
-MassTransit-Envelope mit einer `message`-Eigenschaft.
+Delivery verwendet `Chat.Contracts.Events.ChatMessageEvent`:
 
-Der aktuelle MVP liefert private Nachrichten (`msg.private.<targetId>`) aus.
-Für `msg.group.<groupId>` fehlt im bestehenden Vertrag eine Liste der einzelnen
-Empfänger beziehungsweise ihrer Schlüsselumschläge. Solche Ereignisse werden
-nicht endlos erneut zugestellt, sondern als nicht unterstützt abgelehnt; der
-Storage-Pfad bleibt davon unabhängig.
+```text
+messageId:  UUID als String
+senderId:   UUID als String
+targetId:   UUID als String des Empfängers
+ciphertext: Nachrichtentext im Plaintext-MVP
+timestamp:  UTC-Zeitstempel
+```
 
-## Konfiguration
+Storage ermittelt die private `room_id` aus Sender und Empfänger über
+`room_members`. Delivery verwendet `targetId` für das Redis-Routing.
 
-Alle Einstellungen können über die übliche .NET-Schreibweise überschrieben
-werden, beispielsweise `Delivery__WorkerCount`, `RabbitMQ__Host`,
-`RabbitMQ__Username`, `RabbitMQ__Password`, `Redis__ConnectionString`,
-`Redis__GatewayMappingKeyPrefix` und `Redis__DeliveryChannelPrefix`.
+## Verarbeitung
 
-Der Docker-Build wird aus dem gemeinsamen EVA-Verzeichnis gestartet:
+- MassTransit konsumiert ausschließlich `delivery_queue`.
+- Die Queue ist dauerhaft (`durable=true`, `autoDelete=false`).
+- `Delivery:WorkerCount` begrenzt Prefetch und parallele Consumer.
+- Ein fester `DeliveryWorkerPool` verteilt Nachrichten an freie Worker.
+- Ack/Nack und Retry werden von MassTransit verwaltet.
+- Ein Redis-Fehler lässt die Consumer-Verarbeitung fehlschlagen und wird von
+  MassTransit nach seiner Retry-Konfiguration behandelt.
+- Ein fehlender Online-Eintrag ist ein erfolgreich bearbeiteter Offline-Fall;
+  die Nachricht wird nicht erneut gespeichert.
+
+## Redis-Konfiguration
+
+```text
+Redis__ConnectionString=redis:6379
+Redis__PresenceKeyPrefix=presence:
+Redis__GatewayMappingKeyPrefix=gateway_for_user:
+Redis__DeliveryChannelPrefix=gateway:delivery:
+Redis__SingleGatewayDeliveryChannel=gateway:delivery
+```
+
+Wenn `gateway_for_user:<targetId>` vorhanden ist, wird der Kanal
+`gateway:delivery:<gatewayId>` verwendet. Ohne Mapping verwendet der einfache
+Ein-Gateway-MVP `gateway:delivery`, sofern `presence:<targetId>` online ist.
+
+## Starten
 
 ```powershell
-docker build -f Delivery-Service/Dockerfile .
+dotnet restore
+dotnet test Delivery-Service.Tests\Delivery-Service.Tests.csproj
+dotnet run
 ```
+
+Der Worker stellt keinen öffentlichen HTTP-Port bereit.

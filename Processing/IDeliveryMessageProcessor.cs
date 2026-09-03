@@ -1,11 +1,11 @@
-using Delivery_Service.Messaging;
+using Chat.Contracts.Events;
 
 namespace Delivery_Service.Processing;
 
 public interface IDeliveryMessageProcessor
 {
     Task<DeliveryProcessingResult> ProcessAsync(
-        DeliveryQueueMessage message,
+        ChatMessageEvent message,
         CancellationToken cancellationToken);
 }
 

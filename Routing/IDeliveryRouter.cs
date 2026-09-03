@@ -1,11 +1,11 @@
-using EVA_ECS.Chat.Contracts.Events;
+using Chat.Contracts.Events;
 
 namespace Delivery_Service.Routing;
 
 public interface IDeliveryRouter
 {
     Task<DeliveryRouteResult> RouteAsync(
-        ChatMessagePublishedEvent message,
+        ChatMessageEvent message,
         CancellationToken cancellationToken);
 }
 

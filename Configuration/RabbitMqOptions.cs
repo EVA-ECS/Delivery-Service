@@ -9,7 +9,5 @@ public sealed class RabbitMqOptions
     public string Username { get; set; } = "guest";
     public string Password { get; set; } = "guest";
     public string VirtualHost { get; set; } = "/";
-    public string ExchangeName { get; set; } = "chat_events";
-    public string QueueName { get; set; } = "delivery.queue";
-    public string RoutingKey { get; set; } = "msg.#";
+    public string QueueName { get; set; } = "delivery_queue";
 }
