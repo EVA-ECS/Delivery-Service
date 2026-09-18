@@ -20,5 +20,7 @@
 
   <ItemGroup>
     <Compile Remove="Delivery-Service.Tests\**\*.cs" />
+    <Content Remove="Delivery-Service.Tests\**\*" />
+    <None Remove="Delivery-Service.Tests\**\*" />
   </ItemGroup>
 </Project>

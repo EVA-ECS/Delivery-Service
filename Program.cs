@@ -63,6 +63,14 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<ILoggerFactory>());
 });
 
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(40));
+builder.Services.Configure<MassTransitHostOptions>(options =>
+{
+    options.WaitUntilStarted = true;
+    options.StartTimeout = TimeSpan.FromSeconds(30);
+    options.StopTimeout = TimeSpan.FromSeconds(30);
+    options.ConsumerStopTimeout = TimeSpan.FromSeconds(25);
+});
 builder.Services.AddMassTransit(config =>
 {
     config.AddConsumer<QueueReceiver>();
