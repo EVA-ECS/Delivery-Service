@@ -9,8 +9,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="EVA_ECS.Chat.Contracts" Version="1.0.0" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.6" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
-    <PackageReference Include="RabbitMQ.Client" Version="7.2.2" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.41" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contracts\EVA-ECS.Chat.Contracts\EVA-ECS.Chat.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Delivery-Service.Tests\**\*.cs" />
+    <Content Remove="Delivery-Service.Tests\**\*" />
+    <None Remove="Delivery-Service.Tests\**\*" />
   </ItemGroup>
 </Project>
