@@ -19,8 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="Delivery-Service.Tests\**\*.cs" />
-    <Content Remove="Delivery-Service.Tests\**\*" />
-    <None Remove="Delivery-Service.Tests\**\*" />
+    <Compile Remove="tests\**\*.cs" />
+    <Content Remove="tests\**\*" />
+    <None Remove="tests\**\*" />
+    <Content Remove="package.json;package-lock.json;.config\**\*" />
+    <None Remove="package.json;package-lock.json;.config\**\*" />
   </ItemGroup>
 </Project>
