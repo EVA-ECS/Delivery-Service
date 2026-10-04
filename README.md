@@ -62,8 +62,12 @@ Ein-Gateway-MVP `gateway:delivery`, sofern `presence:<targetId>` online ist.
 
 ```powershell
 dotnet restore
-dotnet test Delivery-Service.Tests\Delivery-Service.Tests.csproj
+npm test
 dotnet run
 ```
 
 Der Worker stellt keinen öffentlichen HTTP-Port bereit.
+
+Die ursprünglichen 15 Unit-Tests liegen jetzt mit ergänzenden Tests unter
+`tests/unit`. [Testanleitung und Coverage](tests/README.md) beschreibt
+`npm run test:unit`, den Mindestwert von 80% und die HTML-Berichte.
