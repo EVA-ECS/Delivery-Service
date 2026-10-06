@@ -33,25 +33,24 @@ public sealed class RedisDeliveryRouter : IDeliveryRouter
             $"{_options.GatewayMappingKeyPrefix}{userId}",
             cancellationToken);
 
-        string? channel;
+        string channel;
         if (!string.IsNullOrWhiteSpace(gatewayId))
         {
-            // Multi-Gateway deployments use the mapping set by Gateway.
+            // Spezifisches Gateway aus der Mapping-Tabelle
             channel = $"{_options.DeliveryChannelPrefix}{gatewayId}";
         }
         else
         {
-            // The MVP can run one Gateway without a user-to-gateway map.
-            var presence = await _store.GetStringAsync(
-                $"{_options.PresenceKeyPrefix}{userId}",
-                cancellationToken);
-
+            // FALLBACK: Wir werfen es in den allgemeinen Channel, 
+            // auf den ALLE Gateways lauschen!
+            channel = _options.SingleGatewayDeliveryChannel;
+            
+            // Optional: Nur loggen, aber NICHT mehr abbrechen!
+            var presence = await _store.GetStringAsync($"{_options.PresenceKeyPrefix}{userId}", cancellationToken);
             if (string.IsNullOrWhiteSpace(presence))
             {
-                return DeliveryRouteResult.Offline;
+                _logger.LogWarning("Nutzer {UserId} scheint laut Redis offline zu sein. Sende trotzdem als Broadcast an alle Gateways...", userId);
             }
-
-            channel = _options.SingleGatewayDeliveryChannel;
         }
 
         var subscriberCount = await _store.PublishAsync(
@@ -62,9 +61,8 @@ public sealed class RedisDeliveryRouter : IDeliveryRouter
         if (subscriberCount == 0)
         {
             _logger.LogWarning(
-                "Gateway {GatewayId} has no Redis subscriber; recipient {TargetId} is treated as offline.",
-                gatewayId ?? "single-gateway",
-                userId);
+                "Kein einziges Gateway lauscht auf Redis-Channel! (Message-ID: {MessageId})",
+                message.MessageId);
             return DeliveryRouteResult.Offline;
         }
 
